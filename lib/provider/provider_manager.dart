@@ -66,5 +66,6 @@ class ProviderManager {
     await ChatProvider().loadChats();
     await McpServerProvider().init();
     await McpServerProvider().loadInMemoryServers();
+    await ChatModelProvider().init();
   }
 }

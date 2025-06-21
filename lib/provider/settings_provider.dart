@@ -1,9 +1,11 @@
 import 'package:chatmcp/llm/llm_factory.dart';
+import 'package:http/http.dart' as http;
 import 'package:chatmcp/llm/model.dart' as llm_model;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:logging/logging.dart';
+import "package:chatmcp/provider/chat_model_provider.dart";
 
 class LLMProviderSetting {
   String apiKey;
@@ -65,9 +67,7 @@ class LLMProviderSetting {
       apiStyle: json['apiStyle'] as String? ?? 'openai',
       providerName: json['providerName'] as String,
       models: json['models'] != null ? List<String>.from(json['models']) : [],
-      enabledModels: json['enabledModels'] != null
-          ? List<String>.from(json['enabledModels'])
-          : [],
+      enabledModels: json['enabledModels'] != null ? List<String>.from(json['enabledModels']) : [],
       providerId: json['provider'] as String? ?? '',
       icon: json['icon'] as String? ?? '',
       custom: json['custom'] as bool? ?? false,
@@ -79,8 +79,50 @@ class LLMProviderSetting {
   }
 }
 
-var defaultSystemPrompt =
-    '''You are an intelligent and helpful AI assistant. Please:
+class ApiSetting extends ChangeNotifier {
+  final Logger _logger = Logger('ApiSetting');
+  final http.Client _httpClient;
+  ChatModelProvider provider;
+  final String baseUrl = "";
+
+  ApiSetting({
+    String baseUrl = "https://api.openai.com/v1",
+    http.Client? client,
+    required ChatModelProvider chatModelProvider,
+  })  : _httpClient = client ?? http.Client(),
+        provider = chatModelProvider;
+
+  Future<void> initialize() async {
+    try {
+      final models = await fetchAvailableModels();
+      await provider.updateAvailableModels(models);
+    } catch (e) {
+      _logger.warning('Failed to initialize models', e);
+    }
+  }
+
+  Future<List<llm_model.Model>> fetchAvailableModels() async {
+    try {
+      final response = await _httpClient.get(
+        Uri.parse('https://api.example.com/models'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> modelsJson = jsonDecode(response.body);
+        return modelsJson.map((modelJson) => llm_model.Model.fromJson(modelJson)).toList();
+      } else {
+        _logger.warning('Failed to fetch models: ${response.statusCode}');
+        return [];
+      }
+    } catch (e) {
+      _logger.warning('Failed to fetch models', e);
+      return [];
+    }
+  }
+}
+
+var defaultSystemPrompt = '''You are an intelligent and helpful AI assistant. Please:
 1. Provide clear and concise responses
 2. If you're not sure about something, please say so
 3. When appropriate, provide examples to illustrate your points
@@ -264,8 +306,7 @@ class SettingsProvider extends ChangeNotifier {
 
   List<LLMProviderSetting> get apiSettings => _apiSettings;
 
-  LLMProviderSetting getProviderSetting(String providerId) =>
-      _apiSettings.firstWhere(
+  LLMProviderSetting getProviderSetting(String providerId) => _apiSettings.firstWhere(
         (element) => element.providerId == providerId,
       );
 
@@ -284,35 +325,46 @@ class SettingsProvider extends ChangeNotifier {
 
   List<llm_model.Model> get availableModels => _availableModels;
 
-  Future<void> updateAvailableModels(
-      {required List<llm_model.Model> models}) async {
+  Future<void> updateAvailableModels({required List<llm_model.Model> models}) async {
     _availableModels = models;
     notifyListeners();
   }
 
   Future<List<llm_model.Model>> getAvailableModels() async {
-    final models = <llm_model.Model>[];
-    for (var setting in _apiSettings) {
-      // 只有启用的提供商才加入模型列表（null 表示启用，只有 false 为禁用）
-      final isEnabled = setting.enable ?? true;
-      if (!isEnabled) continue;
+    try {
+      // 调用API获取模型列表
+      final response = await http.get(Uri.parse('https://api.example.com/models'));
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.map((json) => llm_model.Model.fromJson(json)).toList();
+      }
+      throw Exception('Failed to load models: ${response.statusCode}');
+    } catch (e) {
+      // API调用失败时回退到本地配置
+      Logger.root.warning('Failed to fetch models from API, using local config: $e');
+      final models = <llm_model.Model>[];
+      for (var setting in _apiSettings) {
+        final isEnabled = setting.enable ?? true;
+        if (!isEnabled) continue;
 
-      for (var model in setting.enabledModels ?? []) {
-        var m = llm_model.Model(
-            name: model,
-            label: model,
-            providerId: setting.providerId ?? '',
-            icon: setting.icon,
-            providerName: setting.providerName ?? '',
-            apiStyle: setting.apiStyle ?? '',
-            priority: setting.priority ?? 0);
+        for (var model in setting.enabledModels ?? []) {
+          var m = llm_model.Model(
+              name: model,
+              label: model,
+              providerId: setting.providerId ?? '',
+              icon: setting.icon,
+              providerName: setting.providerName ?? '',
+              apiStyle: setting.apiStyle ?? '',
+              displayName: setting.providerName ?? model,
+              priority: setting.priority ?? 0);
 
-        if (LLMFactoryHelper.isChatModel(m)) {
-          models.add(m);
+          if (LLMFactoryHelper.isChatModel(m)) {
+            models.add(m);
+          }
         }
       }
+      return models;
     }
-    return models;
   }
 
   Future<List<LLMProviderSetting>> loadSettings() async {
@@ -324,10 +376,7 @@ class SettingsProvider extends ChangeNotifier {
     if (settingsJson != null) {
       try {
         final List<dynamic> decoded = jsonDecode(settingsJson);
-        settings = decoded
-            .map((value) =>
-                LLMProviderSetting.fromJson(value as Map<String, dynamic>))
-            .toList();
+        settings = decoded.map((value) => LLMProviderSetting.fromJson(value as Map<String, dynamic>)).toList();
       } catch (e) {
         Logger.root.severe('Error parsing $apiSettingsKey: $e');
         settings = [..._apiSettings];
@@ -335,8 +384,7 @@ class SettingsProvider extends ChangeNotifier {
     }
 
     for (var setting in defaultApiSettings) {
-      if (!settings
-          .any((element) => element.providerId == setting.providerId)) {
+      if (!settings.any((element) => element.providerId == setting.providerId)) {
         settings = [...settings, setting];
       }
     }
@@ -397,16 +445,14 @@ class SettingsProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _generalSetting = GeneralSetting(
       theme: theme ?? _generalSetting.theme,
-      showAssistantAvatar:
-          showAssistantAvatar ?? _generalSetting.showAssistantAvatar,
+      showAssistantAvatar: showAssistantAvatar ?? _generalSetting.showAssistantAvatar,
       showUserAvatar: showUserAvatar ?? _generalSetting.showUserAvatar,
       systemPrompt: systemPrompt ?? _generalSetting.systemPrompt,
       locale: locale ?? _generalSetting.locale,
       maxMessages: maxMessages ?? _generalSetting.maxMessages,
       maxLoops: maxLoops ?? _generalSetting.maxLoops,
     );
-    await prefs.setString(
-        'generalSettings', jsonEncode(_generalSetting.toJson()));
+    await prefs.setString('generalSettings', jsonEncode(_generalSetting.toJson()));
     notifyListeners();
   }
 
@@ -429,8 +475,7 @@ class SettingsProvider extends ChangeNotifier {
       maxMessages: maxMessages ?? _generalSetting.maxMessages,
       maxLoops: maxLoops ?? _generalSetting.maxLoops,
     );
-    await prefs.setString(
-        'generalSettings', jsonEncode(_generalSetting.toJson()));
+    await prefs.setString('generalSettings', jsonEncode(_generalSetting.toJson()));
     notifyListeners();
   }
 

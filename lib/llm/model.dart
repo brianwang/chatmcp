@@ -1,7 +1,11 @@
 import 'dart:convert';
-import 'package:chatmcp/provider/settings_provider.dart';
-import 'package:uuid/uuid.dart';
+
 import 'package:chatmcp/dao/chat_message.dart';
+import 'package:chatmcp/provider/settings_provider.dart';
+import 'package:json_annotation/json_annotation.dart';
+import 'package:uuid/uuid.dart';
+
+part 'model.g.dart';
 
 // Message role enumeration
 enum MessageRole {
@@ -14,6 +18,59 @@ enum MessageRole {
   loading;
 
   String get value => name;
+}
+
+class FunctionCall {
+  final String name;
+  final String arguments;
+
+  FunctionCall({
+    required this.name,
+    required this.arguments,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'arguments': arguments,
+      };
+
+  // Parse arguments to Map
+  Map<String, dynamic> get parsedArguments => json.decode(arguments) as Map<String, dynamic>;
+}
+
+class ToolCall {
+  final String id;
+  final String type;
+  final FunctionCall function;
+
+  ToolCall({
+    required this.id,
+    required this.type,
+    required this.function,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'type': type,
+        'function': function.toJson(),
+      };
+}
+
+class LLMResponse {
+  final String? content;
+  final List<ToolCall>? toolCalls;
+  final bool needToolCall;
+
+  LLMResponse({
+    this.content,
+    this.toolCalls,
+  }) : needToolCall = toolCalls != null && toolCalls.isNotEmpty;
+
+  Map<String, dynamic> toJson() => {
+        'content': content,
+        'tool_calls': toolCalls?.map((t) => t.toJson()).toList(),
+        'need_tool_call': needToolCall,
+      };
 }
 
 class File {
@@ -118,25 +175,19 @@ class ChatMessage {
   }
 
   factory ChatMessage.fromDb(DbChatMessage dbChatMessage) {
-    return ChatMessage.fromJson(dbChatMessage.messageId,
-        dbChatMessage.parentMessageId, jsonDecode(dbChatMessage.body));
+    return ChatMessage.fromJson(dbChatMessage.messageId, dbChatMessage.parentMessageId, jsonDecode(dbChatMessage.body));
   }
 
-  factory ChatMessage.fromJson(
-      String messageId, String parentMessageId, Map<String, dynamic> json) {
+  factory ChatMessage.fromJson(String messageId, String parentMessageId, Map<String, dynamic> json) {
     // Handle type conversion for toolCalls
     List<Map<String, dynamic>>? toolCalls;
     if (json['tool_calls'] != null) {
-      toolCalls = (json['tool_calls'] as List)
-          .map((item) => Map<String, dynamic>.from(item))
-          .toList();
+      toolCalls = (json['tool_calls'] as List).map((item) => Map<String, dynamic>.from(item)).toList();
     }
 
     List<File>? files;
     if (json['files'] != null) {
-      files = (json['files'] as List)
-          .map((item) => File.fromJson(Map<String, dynamic>.from(item)))
-          .toList();
+      files = (json['files'] as List).map((item) => File.fromJson(Map<String, dynamic>.from(item))).toList();
     }
 
     return ChatMessage(
@@ -157,80 +208,36 @@ class ChatMessage {
     return jsonEncode(toJson());
   }
 
-  ChatMessage copyWith(
-      {String? messageId,
-      String? parentMessageId,
-      String? content,
-      MessageRole? role}) {
+  ChatMessage copyWith({
+    String? messageId,
+    String? parentMessageId,
+    String? content,
+    MessageRole? role,
+    String? name,
+    String? mcpServerName,
+    String? toolCallId,
+    List<Map<String, dynamic>>? toolCalls,
+    List<File>? files,
+    List<String>? brotherMessageIds,
+    List<String>? childMessageIds,
+  }) {
     return ChatMessage(
       messageId: messageId ?? this.messageId,
       parentMessageId: parentMessageId ?? this.parentMessageId,
       role: role ?? this.role,
       content: content ?? this.content,
-      name: name,
-      mcpServerName: mcpServerName,
-      toolCallId: toolCallId,
-      toolCalls: toolCalls,
-      files: files,
+      name: name ?? this.name,
+      mcpServerName: mcpServerName ?? this.mcpServerName,
+      toolCallId: toolCallId ?? this.toolCallId,
+      toolCalls: toolCalls ?? this.toolCalls,
+      files: files ?? this.files,
+      brotherMessageIds: brotherMessageIds ?? this.brotherMessageIds,
+      childMessageIds: childMessageIds ?? this.childMessageIds,
     );
   }
 }
 
-// Add tool call data structure
-class ToolCall {
-  final String id;
-  final String type;
-  final FunctionCall function;
-
-  ToolCall({
-    required this.id,
-    required this.type,
-    required this.function,
-  });
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'type': type,
-        'function': function.toJson(),
-      };
-}
-
-class FunctionCall {
-  final String name;
-  final String arguments;
-
-  FunctionCall({
-    required this.name,
-    required this.arguments,
-  });
-
-  Map<String, dynamic> toJson() => {
-        'name': name,
-        'arguments': arguments,
-      };
-
-  // Parse arguments to Map
-  Map<String, dynamic> get parsedArguments =>
-      json.decode(arguments) as Map<String, dynamic>;
-}
-
-class LLMResponse {
-  final String? content;
-  final List<ToolCall>? toolCalls;
-  final bool needToolCall;
-
-  LLMResponse({
-    this.content,
-    this.toolCalls,
-  }) : needToolCall = toolCalls != null && toolCalls.isNotEmpty;
-
-  Map<String, dynamic> toJson() => {
-        'content': content,
-        'tool_calls': toolCalls?.map((t) => t.toJson()).toList(),
-        'need_tool_call': needToolCall,
-      };
-}
-
+@JsonSerializable()
 class Model {
   final String name;
   final String label;
@@ -238,6 +245,7 @@ class Model {
   final String apiStyle;
   final String icon;
   final String providerName;
+  final String displayName;
   final int priority;
 
   Model({
@@ -247,6 +255,7 @@ class Model {
     required this.icon,
     required this.providerName,
     required this.apiStyle,
+    required this.displayName,
     this.priority = 0,
   });
 
@@ -259,6 +268,7 @@ class Model {
       providerName: json['providerName'],
       apiStyle: json['apiStyle'],
       priority: json['priority'] ?? 0,
+      displayName: json['displayName'] ?? json['label'],
     );
   }
 

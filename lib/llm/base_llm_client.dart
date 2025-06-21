@@ -4,8 +4,21 @@ import 'package:logging/logging.dart';
 import 'model.dart';
 import 'utils.dart';
 import 'package:http/http.dart' as http;
+import "package:chatmcp/llm/ollama_client.dart";
 
 abstract class BaseLLMClient {
+  BaseLLMClient();
+
+  factory BaseLLMClient.createClient(LLMProviderSetting apiSetting) {
+    switch (apiSetting.providerName) {
+      case 'ollama':
+        return OllamaClient(baseUrl: apiSetting.apiEndpoint);
+      // Add other provider cases here
+      default:
+        throw UnsupportedError('Provider ${apiSetting.providerName} is not supported');
+    }
+  }
+
   Future<LLMResponse> chatCompletion(CompletionRequest request);
 
   Stream<LLMResponse> chatStreamCompletion(CompletionRequest request);
@@ -14,10 +27,8 @@ abstract class BaseLLMClient {
     if (first.isEmpty) return second;
     if (second.isEmpty) return first;
 
-    final firstWithoutTrailing =
-        first.endsWith('/') ? first.substring(0, first.length - 1) : first;
-    final secondWithoutLeading =
-        second.startsWith('/') ? second.substring(1) : second;
+    final firstWithoutTrailing = first.endsWith('/') ? first.substring(0, first.length - 1) : first;
+    final secondWithoutLeading = second.startsWith('/') ? second.substring(1) : second;
 
     return '$firstWithoutTrailing/$secondWithoutLeading';
   }
@@ -68,8 +79,7 @@ abstract class BaseLLMClient {
     }
   }
 
-  Future<LLMException> handleError(
-      dynamic e, String name, String endpoint, String bodyStr) async {
+  Future<LLMException> handleError(dynamic e, String name, String endpoint, String bodyStr) async {
     if (e is http.ClientException) {
       return LLMException(
         name: name,
@@ -81,9 +91,7 @@ abstract class BaseLLMClient {
       // Handle HTTP errors (like "HTTP 400: Bad Request")
       final errorMsg = e.toString();
       final statusCodeMatch = RegExp(r'HTTP (\d+)').firstMatch(errorMsg);
-      final statusCode = statusCodeMatch != null
-          ? int.tryParse(statusCodeMatch.group(1) ?? '')
-          : null;
+      final statusCode = statusCodeMatch != null ? int.tryParse(statusCodeMatch.group(1) ?? '') : null;
 
       return LLMException(
         name: name,
@@ -105,12 +113,8 @@ abstract class BaseLLMClient {
 
   String getGenTitleModel() {
     final model = ProviderManager.chatModelProvider.currentModel;
-    final providerSetting =
-        ProviderManager.settingsProvider.getProviderSetting(model.providerId);
-    return providerSetting.genTitleModel != null &&
-            providerSetting.genTitleModel!.isNotEmpty
-        ? providerSetting.genTitleModel!
-        : model.name;
+    final providerSetting = ProviderManager.settingsProvider.getProviderSetting(model.providerId);
+    return providerSetting.genTitleModel != null && providerSetting.genTitleModel!.isNotEmpty ? providerSetting.genTitleModel! : model.name;
   }
 
   Future<String> genTitle(List<ChatMessage> messages) async {
@@ -121,21 +125,17 @@ abstract class BaseLLMClient {
       final role = msg.role == MessageRole.user ? "Human" : "Assistant";
       final content = msg.content ?? '';
       // 限制每条消息最多100个字符，避免内容过长
-      final truncatedContent =
-          content.length > 100 ? '${content.substring(0, 100)}...' : content;
+      final truncatedContent = content.length > 100 ? '${content.substring(0, 100)}...' : content;
       return "$role: $truncatedContent";
     }).join("\n");
 
     // 进一步限制总长度
-    final finalText = conversationText.length > 500
-        ? '${conversationText.substring(0, 500)}...'
-        : conversationText;
+    final finalText = conversationText.length > 500 ? '${conversationText.substring(0, 500)}...' : conversationText;
 
     try {
       final prompt = ChatMessage(
         role: MessageRole.user,
-        content:
-            """Generate a concise title (max 20 characters) for this conversation. Return only the title:
+        content: """Generate a concise title (max 20 characters) for this conversation. Return only the title:
 
 $finalText""",
       );
@@ -153,11 +153,25 @@ $finalText""",
     }
   }
 
+  Future<List<Model>> listModels() async {
+    final modelNames = await models();
+    return modelNames
+        .map((name) => Model(
+              name: name,
+              providerId: 'ollama', // Default provider ID
+              label: name,
+              icon: "material-icons-outlined: chat",
+              apiStyle: "",
+              providerName: "ollama",
+              displayName: name,
+            ))
+        .toList();
+  }
+
   Future<List<String>> models();
 
   /// 将模型设置添加到请求体中，只有大于0的参数才会被设置
-  Map<String, dynamic> addModelSettingsToBody(
-      Map<String, dynamic> body, ChatSetting? modelSetting) {
+  Map<String, dynamic> addModelSettingsToBody(Map<String, dynamic> body, ChatSetting? modelSetting) {
     if (modelSetting == null) return body;
 
     if (modelSetting.temperature > 0) {

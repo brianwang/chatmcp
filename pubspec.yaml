@@ -34,7 +34,8 @@ dependencies:
     sdk: flutter
   intl: ^0.20.2
   shared_preferences: ^2.2.2
-  http: ^1.2.0
+  http: ^1.2.2
+  json_annotation: ^4.8.1
   eventflux: ^2.2.1
 
   # The following adds the Cupertino Icons font to your application.
@@ -90,7 +91,6 @@ dev_dependencies:
   mockito: ^5.4.0
   build_runner: ^2.4.0
   flutter_launcher_icons: ^0.14.3
-
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

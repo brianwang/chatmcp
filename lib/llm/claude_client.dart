@@ -14,9 +14,7 @@ class ClaudeClient extends BaseLLMClient {
   ClaudeClient({
     required this.apiKey,
     String? baseUrl,
-  })  : baseUrl = (baseUrl == null || baseUrl.isEmpty)
-            ? 'https://api.anthropic.com/v1'
-            : baseUrl,
+  })  : baseUrl = (baseUrl == null || baseUrl.isEmpty) ? 'https://api.anthropic.com/v1' : baseUrl,
         _headers = {
           'Content-Type': 'application/json',
           'x-api-key': apiKey,
@@ -76,8 +74,7 @@ class ClaudeClient extends BaseLLMClient {
         toolCalls: toolCalls,
       );
     } catch (e) {
-      throw Exception(
-          "Claude API call failed: $baseUrl/messages body: ${jsonEncode(body)} error: $e");
+      throw Exception("Claude API call failed: $baseUrl/messages body: ${jsonEncode(body)} error: $e");
     }
   }
 
@@ -115,9 +112,7 @@ class ClaudeClient extends BaseLLMClient {
 
         throw Exception('HTTP ${response.statusCode}: $responseBody');
       }
-      final stream = response.stream
-          .transform(utf8.decoder)
-          .transform(const LineSplitter());
+      final stream = response.stream.transform(utf8.decoder).transform(const LineSplitter());
 
       await for (final line in stream) {
         if (!line.startsWith('data:')) continue;
@@ -131,19 +126,16 @@ class ClaudeClient extends BaseLLMClient {
 
           switch (eventType) {
             case 'content_block_start':
-              if (event['content_block'] != null &&
-                  event['content_block']['text'] != null) {
+              if (event['content_block'] != null && event['content_block']['text'] != null) {
                 yield LLMResponse(content: event['content_block']['text']);
               } else {
-                Logger.root
-                    .warning('Invalid content_block_start event: $event');
+                Logger.root.warning('Invalid content_block_start event: $event');
               }
               break;
             case 'content_block_delta':
               final delta = event['delta'];
               if (delta == null) {
-                Logger.root
-                    .warning('Invalid content_block_delta event: $event');
+                Logger.root.warning('Invalid content_block_delta event: $event');
                 break;
               }
 
@@ -185,8 +177,7 @@ class ClaudeClient extends BaseLLMClient {
         }
       }
     } catch (e) {
-      throw await handleError(
-          e, 'Claude', '$baseUrl/messages', jsonEncode(body));
+      throw await handleError(e, 'Claude', '$baseUrl/messages', jsonEncode(body));
     }
   }
 
@@ -257,8 +248,7 @@ class ClaudeClient extends BaseLLMClient {
       }
 
       // Look for tool_calls in the response
-      final toolUseBlocks = contentBlocks.where((block) =>
-          block['type'] == 'tool_calls' || block['type'] == 'tool_use');
+      final toolUseBlocks = contentBlocks.where((block) => block['type'] == 'tool_calls' || block['type'] == 'tool_use');
 
       if (toolUseBlocks.isEmpty) {
         // Get text content from the first text block
@@ -293,8 +283,7 @@ class ClaudeClient extends BaseLLMClient {
         'tool_calls': toolCalls,
       };
     } catch (e) {
-      throw await handleError(
-          e, 'Claude', '$baseUrl/messages', jsonEncode(body));
+      throw await handleError(e, 'Claude', '$baseUrl/messages', jsonEncode(body));
     }
   }
 
@@ -316,10 +305,7 @@ class ClaudeClient extends BaseLLMClient {
       }
 
       final data = jsonDecode(response.body);
-      final models = (data['data'] as List)
-          .map((m) => m['id'].toString())
-          .where((id) => id.contains('claude'))
-          .toList();
+      final models = (data['data'] as List).map((m) => m['id'].toString()).where((id) => id.contains('claude')).toList();
 
       return models;
     } catch (e, trace) {
@@ -329,8 +315,7 @@ class ClaudeClient extends BaseLLMClient {
   }
 }
 
-List<Map<String, dynamic>> chatMessageToClaudeMessage(
-    List<ChatMessage> messages) {
+List<Map<String, dynamic>> chatMessageToClaudeMessage(List<ChatMessage> messages) {
   return messages.map((message) {
     final List<Map<String, dynamic>> contentParts = [];
 
